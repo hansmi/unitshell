@@ -44,12 +44,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v7
         with:
+          pattern: unitshell-*-*
           path: artifacts
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
           file_glob: true
-          file: artifacts/unitshell-*-*/unitshell_*.*
+          file: artifacts/unitshell_*.*
 
 # vim: set sw=2 sts=2 et : -->
