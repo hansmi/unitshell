@@ -1,0 +1,184 @@
+#!/bin/bash
+#
+# Copyright (c) 2025 Michael Hanselmann. All rights reserved. Released under
+# the BSD-3-Clause license.
+#
+
+set -e -u -o pipefail
+
+usage() {
+  echo "Usage: $0 [options] <unit.service> <command...>"
+  echo
+  echo 'Run a command in the same environment as a systemd service unit.'
+  echo
+  echo 'Options:'
+  echo '  -u  Talk to the service manager of the calling user, rather than the'
+  echo '      service manager of the system.'
+}
+
+opt_user=
+
+while getopts 'hu' opt; do
+  case "$opt" in
+    h)
+      usage
+      exit 0
+      ;;
+    u)
+      opt_user=true
+      ;;
+    *)
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+shift $((OPTIND - 1))
+
+if (( $# < 2 )); then
+  usage >&2
+  exit 1
+fi
+
+ctl() {
+  /usr/bin/systemctl ${opt_user:+--user} "$@"
+}
+
+unit="${1:?}"
+shift
+
+unit="${unit%.service}.service"
+ephemeral_name="${unit%.service}_ephemeral_$(date +%Y%m%d_%H%M%S)_$$"
+ephemeral_service="${ephemeral_name}.service"
+ephemeral_socket="${ephemeral_name}.socket"
+fragment_paths=()
+
+tmpdir=$(mktemp -d)
+
+cleanup() {
+  local i
+
+  for i in "$ephemeral_socket" "$ephemeral_service"; do
+    ctl revert "$i" || :
+    ctl stop "$i" || :
+  done
+
+  for i in "${fragment_paths[@]}"; do
+    if [[ -e "$i" ]]; then
+      rm -f "$i"
+    fi
+  done
+
+  rm -rf "$tmpdir"
+}
+
+trap cleanup EXIT
+
+{
+  ctl cat --no-pager "$unit"
+  echo
+  cat <<EOF
+[Unit]
+Description=Ephemeral shell for ${unit@Q}.
+
+[Service]
+Type=exec
+ExecCondition=
+ExecStartPre=
+ExecStartPost=
+ExecStart=
+ExecStart=:${tmpdir}/server
+ExecReload=
+ExecStop=
+ExecStopPost=
+Restart=no
+RemainAfterExit=no
+ReadWritePaths=${tmpdir}
+ExecPaths=${tmpdir}
+StandardInput=socket
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${ephemeral_name}
+EOF
+} > "${tmpdir}/service"
+
+{
+  uid=$(id -u)
+  gid=$(id -g)
+  cat <<EOF
+[Unit]
+Description=Socket for ${ephemeral_service@Q}.
+
+[Socket]
+ListenStream=${tmpdir}/server.sock
+SocketUser=${uid:?}
+SocketGroup=${gid:?}
+SocketMode=0600
+Accept=no
+EOF
+} > "${tmpdir}/socket"
+
+cat >"${tmpdir}/server" <<EOF
+#!${BASH:?}
+
+set -e
+
+exec {UNITSHELL_LOG_FD}>&2
+
+export UNITSHELL_LOG_FD
+
+exec /usr/bin/s6-ipcserverd /usr/bin/s6-sudod ${tmpdir@Q}/handler
+EOF
+
+cat >"${tmpdir}/handler" <<EOF
+#!${BASH:?}
+
+set -e
+
+echo "Command: ${*@Q}" >&\${UNITSHELL_LOG_FD}
+
+if test -t 0; then
+  # script(1) acts as a tty-to-tty proxy. The container is unlikely to have
+  # ownership of the caller's terminal.
+  SHELL=/bin/sh \
+  exec /usr/bin/script --quiet --return --command "${*@Q}" /dev/null
+fi
+
+exec /bin/sh -c "${*@Q}"
+EOF
+
+chmod 0755 "${tmpdir}"
+chmod 0755 "${tmpdir}/server" "${tmpdir}/handler"
+
+write_unit() {
+  local name="$1" source="$2"
+
+  cat >"${tmpdir}/editor" <<EOF
+#!${BASH:?}
+
+set -e
+
+exec cat ${source@Q} > "\$1"
+EOF
+
+  chmod 0700 "${tmpdir}/editor"
+
+  SYSTEMD_EDITOR="${tmpdir}/editor" \
+  ctl edit --full --force --runtime "$name"
+
+  fragment_paths+=( $(ctl show -P FragmentPath "$name") )
+}
+
+write_unit "$ephemeral_service" "${tmpdir}/service"
+write_unit "$ephemeral_socket" "${tmpdir}/socket"
+
+ctl daemon-reload
+
+ctl restart "$ephemeral_socket"
+
+/usr/bin/s6-sudo -e "${tmpdir}/server.sock" "$@"
+
+exit 0
+
+# vim: set sw=2 sts=2 et :

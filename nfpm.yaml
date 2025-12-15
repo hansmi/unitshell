@@ -1,0 +1,21 @@
+# Configuration for nFPM
+# https://nfpm.goreleaser.com/
+
+name: unitshell
+arch: all
+version: ${UNITSHELL_VERSION}
+
+description: Run a command in the same environment as a systemd service unit.
+maintainer: M. Hanselmann
+homepage: https://github.com/hansmi/unitshell
+license: BSD-3-Clause
+
+depends:
+  - bash
+  - s6
+
+contents:
+  - src: ./unitshell
+    dst: /usr/bin/unitshell
+
+# vim: set sw=2 sts=2 et :
