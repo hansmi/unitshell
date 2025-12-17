@@ -136,17 +136,19 @@ cat >"${tmpdir}/handler" <<EOF
 
 set -e
 
-echo "Command: ${*@Q}" >&\${UNITSHELL_LOG_FD}
+cmd="\${*@Q}"
+
+echo "Command: \${cmd}" >&\${UNITSHELL_LOG_FD}
 
 if test -t 0; then
   # script(1) acts as a pty-to-pty proxy. The container is unlikely to have
   # ownership of the caller's terminal and thus can't make it the controlling
   # terminal.
   SHELL=/bin/sh \
-  exec /usr/bin/script --quiet --return --command "${*@Q}" /dev/null
+  exec /usr/bin/script --quiet --return --command "\${cmd}" /dev/null
 fi
 
-exec /bin/sh -c "${*@Q}"
+exec /bin/sh -c "\${cmd}"
 EOF
 
 chmod 0755 "${tmpdir}"
