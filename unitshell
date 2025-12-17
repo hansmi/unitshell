@@ -7,7 +7,7 @@
 set -e -u -o pipefail
 
 usage() {
-  echo "Usage: $0 [options] <unit.service> <command...>"
+  echo "Usage: $0 [options] <unit.service> [<command...>]"
   echo
   echo 'Run a command in the same environment as a systemd service unit.'
   echo
@@ -36,7 +36,7 @@ done
 
 shift $((OPTIND - 1))
 
-if (( $# < 2 )); then
+if (( $# < 1 )); then
   usage >&2
   exit 1
 fi
@@ -180,7 +180,13 @@ ctl daemon-reload
 
 ctl restart "$ephemeral_socket"
 
-/usr/bin/s6-sudo -e "${tmpdir}/server.sock" "$@"
+cmd=( "$@" )
+
+if (( ${#cmd[*]} == 0 )); then
+  cmd+=( /bin/sh )
+fi
+
+/usr/bin/s6-sudo -e "${tmpdir}/server.sock" "${cmd[@]}"
 
 exit 0
 
