@@ -81,6 +81,9 @@ trap cleanup EXIT
   cat <<EOF
 [Unit]
 Description=Ephemeral shell for ${unit@Q}.
+RefuseManualStart=no
+RefuseManualStop=no
+CollectMode=inactive-or-failed
 
 [Service]
 Type=exec
