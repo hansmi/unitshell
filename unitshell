@@ -48,20 +48,19 @@ ctl() {
 unit="${1:?}"
 shift
 
-unit="${unit%.service}.service"
-ephemeral_name="${unit%.service}_ephemeral_$(date +%Y%m%d_%H%M%S)_$$"
-ephemeral_service="${ephemeral_name}.service"
-ephemeral_socket="${ephemeral_name}.socket"
+ephemeral_service=
+ephemeral_socket=
 fragment_paths=()
-
 tmpdir=$(mktemp -d)
 
 cleanup() {
   local i
 
   for i in "$ephemeral_socket" "$ephemeral_service"; do
-    ctl revert "$i" || :
-    ctl stop "$i" || :
+    if [[ -n "$i" ]]; then
+      ctl revert "$i" || :
+      ctl stop "$i" || :
+    fi
   done
 
   for i in "${fragment_paths[@]}"; do
@@ -75,8 +74,39 @@ cleanup() {
 
 trap cleanup EXIT
 
+ctl cat --no-pager "$unit" > "${tmpdir}/service.original"
+
+make_name() {
+  local unit_type="$1"
+  local unit_raw
+  local instance_name=
+  local base
+  local suffix
+
+  base="$ephemeral_name_base"
+
+  suffix=$(systemd-escape --unescape -- "$unit")
+  suffix="${suffix%%@*}"
+  suffix="${suffix%%.service}"
+  suffix="${suffix//[^-_.a-zA-Z0-9]/_}"
+
+  if [[ -n "$suffix" ]]; then
+    base+="_${suffix::32}"
+  fi
+
+  if [[ "$unit" = *@* ]] && instance_name=$(systemd-escape --unescape --instance -- "$unit"); then
+    systemd-escape --template="${base}@.${unit_type}" -- "$instance_name"
+  else
+    systemd-escape "${base}.${unit_type}"
+  fi
+}
+
+ephemeral_name_base="unitshell_$(date +%Y%m%d_%H%M%S)_$$"
+ephemeral_service=$(make_name service)
+ephemeral_socket=$(make_name socket)
+
 {
-  ctl cat --no-pager "$unit"
+  cat "${tmpdir}/service.original"
   echo
   cat <<EOF
 [Unit]
@@ -103,7 +133,7 @@ ExecPaths=${tmpdir}
 StandardInput=socket
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=${ephemeral_name}
+SyslogIdentifier=${ephemeral_service%%.service}
 EOF
 } > "${tmpdir}/service"
 
