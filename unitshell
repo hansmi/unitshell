@@ -94,6 +94,7 @@ ExecStop=
 ExecStopPost=
 Restart=no
 RemainAfterExit=no
+WorkingDirectory=/
 BindReadOnlyPaths=${tmpdir}
 ExecPaths=${tmpdir}
 StandardInput=socket
@@ -136,9 +137,15 @@ cat >"${tmpdir}/handler" <<EOF
 
 set -e
 
+wd=${PWD@Q}
 cmd="\${*@Q}"
 
-echo "Command: \${cmd}" >&\${UNITSHELL_LOG_FD}
+{
+  echo "Command: \${cmd}"
+  echo "Working directory: \${wd}"
+} >&\${UNITSHELL_LOG_FD}
+
+cd "\${wd}" || :
 
 if test -t 0; then
   # script(1) acts as a pty-to-pty proxy. The container is unlikely to have
