@@ -79,7 +79,6 @@ ctl cat --no-pager "$unit" > "${tmpdir}/service.original"
 
 make_name() {
   local unit_type="$1"
-  local unit_raw
   local instance_name=
   local base
   local suffix
