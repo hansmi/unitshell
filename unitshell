@@ -105,6 +105,14 @@ ephemeral_name_base="unitshell_$(date +%Y%m%d_%H%M%S)_$$"
 ephemeral_service=$(make_name service)
 ephemeral_socket=$(make_name socket)
 
+unit_dir=$(
+  if [[ -n "$opt_user" ]]; then
+    /usr/bin/systemd-path user-runtime
+  else
+    /usr/bin/systemd-path system-runtime
+  fi
+)
+
 {
   cat "${tmpdir}/service.original"
   echo
@@ -196,21 +204,13 @@ chmod 0755 "${tmpdir}/server" "${tmpdir}/handler"
 
 write_unit() {
   local name="$1" source="$2"
+  local unit_file
 
-  cat >"${tmpdir}/editor" <<EOF
-#!${BASH:?}
+  unit_file="${unit_dir}/systemd/transient/${name}"
 
-set -e
+  fragment_paths+=( "$unit_file" )
 
-exec cat ${source@Q} > "\$1"
-EOF
-
-  chmod 0700 "${tmpdir}/editor"
-
-  SYSTEMD_EDITOR="${tmpdir}/editor" \
-  ctl edit --full --force --runtime "$name"
-
-  fragment_paths+=( $(ctl show -P FragmentPath "$name") )
+  cp --no-clobber --preserve=mode "$source" "$unit_file"
 }
 
 write_unit "$ephemeral_service" "${tmpdir}/service"
