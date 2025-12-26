@@ -12,6 +12,7 @@ license: BSD-3-Clause
 
 depends:
   - bash
+  - gawk
   - s6
 
 contents:

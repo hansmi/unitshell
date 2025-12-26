@@ -5,6 +5,7 @@
 #
 
 set -e -u -o pipefail
+shopt -s extglob
 
 usage() {
   echo "Usage: $0 [options] <unit.service> [<command...>]"
@@ -113,6 +114,31 @@ unit_dir=$(
   fi
 )
 
+extract_options() {
+  awk -F'=' '
+    function trim(s) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+        return s
+    }
+
+    /^[[:space:]]*\[.*\]/ {
+      match($0, /\[[^]]+\]/)
+      section = trim(substr($0, RSTART + 1, RLENGTH - 2))
+      next
+    }
+
+    section != "" && /^[[:space:]]*[^;#[:space:]].*=/ {
+      option = trim($1)
+
+      if (option && !seen[section, option]++) {
+        print section " " option
+      }
+    }
+  '
+}
+
+extract_options < "${tmpdir}/service.original" > "${tmpdir}/service.original.options"
+
 {
   cat "${tmpdir}/service.original"
   echo
@@ -122,7 +148,15 @@ Description=Ephemeral shell for ${unit@Q}.
 RefuseManualStart=no
 RefuseManualStop=no
 CollectMode=inactive-or-failed
+EOF
 
+  while read -r section option _; do
+    if [[ "$section" == Unit && "$option" == @(Condition|Assert)* ]]; then
+      echo "${option}="
+    fi
+  done < "${tmpdir}/service.original.options"
+
+  cat <<EOF
 [Service]
 Type=exec
 ExecCondition=
