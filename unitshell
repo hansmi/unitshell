@@ -201,6 +201,7 @@ EOF
 
 chmod 0755 "${tmpdir}"
 chmod 0755 "${tmpdir}/server" "${tmpdir}/handler"
+chmod 0644 "${tmpdir}/service" "${tmpdir}/socket"
 
 write_unit() {
   local name="$1" source="$2"
